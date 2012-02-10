@@ -2,6 +2,7 @@ package App::Ack;
 
 use warnings;
 use strict;
+use Encode;
 
 use File::Next 0.40;
 
@@ -592,6 +593,8 @@ sub build_regex {
     my $opt = shift;
 
     defined $str or App::Ack::die( 'No regular expression found.' );
+
+    Encode::from_to($str, 'cp932', 'utf8');
 
     $str = quotemeta( $str ) if $opt->{Q};
     if ( $opt->{w} ) {
@@ -1214,6 +1217,9 @@ sub print_match_or_context {
             if ( $show_column ) {
                 App::Ack::print_column_no( $match_start+1, $sep );
             }
+
+            Encode::from_to($_, 'utf8', 'cp932');
+
             App::Ack::print($_ . "\n");
         }
         $any_output = 1;
