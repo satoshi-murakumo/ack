@@ -1156,6 +1156,7 @@ package App::Ack;
 
 use warnings;
 use strict;
+use Encode;
 
 
 
@@ -1657,6 +1658,8 @@ sub build_regex {
     my $opt = shift;
 
     defined $str or App::Ack::die( 'No regular expression found.' );
+
+    Encode::from_to($str, 'cp932', 'utf8');
 
     $str = quotemeta( $str ) if $opt->{Q};
     if ( $opt->{w} ) {
@@ -2209,6 +2212,9 @@ sub print_match_or_context {
             if ( $show_column ) {
                 App::Ack::print_column_no( $match_start+1, $sep );
             }
+
+            Encode::from_to($_, 'utf8', 'cp932');
+
             App::Ack::print($_ . "\n");
         }
         $any_output = 1;
@@ -2636,6 +2642,8 @@ package App::Ack::Resource::Basic;
 
 use warnings;
 use strict;
+use Encode;
+use Encode::Guess qw/cp932 euc-jp/;
 
 
 our @ISA = qw( App::Ack::Resource );
@@ -2651,6 +2659,7 @@ sub new {
         could_be_binary => undef,
         opened          => undef,
         id              => undef,
+        decoder         => undef,
     }, $class;
 
     if ( $self->{filename} eq '-' ) {
@@ -2662,7 +2671,22 @@ sub new {
             App::Ack::warn( "$self->{filename}: $!" );
             return;
         }
-        $self->{could_be_binary} = 1;
+
+        my $encode_test = '';
+        my $handle = $self->{fh};
+        while ( <$handle> ) {
+            $encode_test .= $_;
+            last if $. == 25;
+        }
+        seek( $handle, 0, 0 );
+
+        my $guess = Encode::Guess->guess( $encode_test );
+        if ( ref $guess ) {
+            $self->{decoder} = $guess;
+            $self->{could_be_binary} = 0;
+        } else {
+            $self->{could_be_binary} = 1;
+        }
     }
 
     return $self;
@@ -2710,6 +2734,15 @@ sub needs_line_scan {
     }
     return 0 unless $rc && ( $rc == $size );
 
+    my $guess = $self->{decoder};
+    if ( not defined $guess ) {
+        $guess = Encode::Guess->guess($buffer);
+    }
+    if ( ref $guess ) {
+        $buffer = $guess->decode($buffer);
+        $buffer = Encode::encode('utf8', $buffer);
+    }
+
     my $regex = $opt->{regex};
     return $buffer =~ /$regex/m;
 }
@@ -2728,6 +2761,16 @@ sub reset {
 sub next_text {
     if ( defined ($_ = readline $_[0]->{fh}) ) {
         $. = ++$_[0]->{line};
+
+        my $guess = $_[0]->{decoder};
+        if ( not defined $guess ) {
+            $guess = Encode::Guess->guess($_);
+        }
+        if ( ref $guess ) {
+            $_ = $guess->decode($_);
+            $_ = Encode::encode('utf8', $_);
+        }
+
         return 1;
     }
 
