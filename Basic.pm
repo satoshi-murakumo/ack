@@ -57,16 +57,19 @@ sub new {
             return;
         }
 
-        my $encode_test = '';
-        my $handle = $self->{fh};
-        while ( <$handle> ) {
-            $encode_test .= $_;
-            last if $. == 25;
-        }
-        seek( $handle, 0, 0 );
+        my $buffer;
+        my $rc = read( $self->{fh}, $buffer, 2_000 );
+        seek( $self->{fh}, 0, 0 );
 
-        my $guess = Encode::Guess->guess( $encode_test );
-        if ( ref $guess ) {
+        if ( !$rc ) {
+            $self->{could_be_binary} = 1;
+            return;
+        }
+
+        my $guess = Encode::Guess->guess( $buffer );
+        # Guess module often judges a binary file to be a Unicode file.
+        # So we set could_be_binary, when `Encode::Unicode`
+        if ( ref $guess && not (ref $guess eq 'Encode::Unicode') ) {
             $self->{decoder} = $guess;
             $self->{could_be_binary} = 0;
         } else {
@@ -144,12 +147,9 @@ sub needs_line_scan {
     return 0 unless $rc && ( $rc == $size );
 
     my $guess = $self->{decoder};
-    if ( not defined $guess ) {
-        $guess = Encode::Guess->guess($buffer);
-    }
-    if ( ref $guess ) {
+    if ( defined $guess ) {
         $buffer = $guess->decode($buffer);
-        $buffer = Encode::encode('utf8', $buffer);
+        $buffer = Encode::encode( 'utf8', $buffer );
     }
 
     my $regex = $opt->{regex};
@@ -191,7 +191,7 @@ sub next_text {
         if ( not defined $guess ) {
             $guess = Encode::Guess->guess($_);
         }
-        if ( ref $guess ) {
+        if ( ref $guess && not (ref $guess eq 'Encode::Unicode') ) {
             $_ = $guess->decode($_);
             $_ = Encode::encode('utf8', $_);
         }
